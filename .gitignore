@@ -1,0 +1,12 @@
+.env
+.mypy_cache/
+venv/
+.venv
+__pycache__/
+.idea
+poetry.lock
+/data
+*.ipynb
+*.xlsx
+*.xls
+*.csv

@@ -1,0 +1,176 @@
+services:
+  database:
+    container_name: fdb_database
+    image: postgres:16.4
+    hostname: database
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: main
+    volumes:
+      - ./data/database:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "main"]
+      start_period: 2s
+      interval: 3s
+      timeout: 2s
+      retries: 15
+    restart: unless-stopped
+    networks:
+      - fdb_network
+
+  redis:
+    container_name: fdb_redis
+    image: redis:latest
+    hostname: redis
+    env_file:
+      - ./.env
+    ports:
+        - '${REDIS_OUT_PORT}:${REDIS_IN_PORT}'
+    volumes:
+      - ./data/redis:/data # Папка для хранения данных и бэкапов
+      - ./redis.conf:/usr/local/etc/redis/redis.conf # Файл конфигурации
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -a $REDIS_PASSWORD ping | grep PONG" ]
+      start_period: 2s
+      interval: 1s
+      timeout: 2s
+      retries: 15
+    restart: unless-stopped
+    networks:
+    - fdb_network
+
+  core:
+    image: fdb-core
+    container_name: fbd_core
+    build: ./core
+    volumes:
+      - ./core:/srv/app
+    ports:
+      - "5001:5001"
+    command: "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 5001"
+    depends_on:
+      - database
+    healthcheck:
+      test: [ "CMD-SHELL", "curl localhost:5001/docs" ]
+      start_period: 10s
+      interval: 5s
+      timeout: 2s
+      retries: 15
+    restart: unless-stopped
+    networks:
+      - fdb_network
+
+  auth_service:
+    image: fdb-auth_service
+    container_name: fbd_auth_service
+    build: ./auth_service
+    volumes:
+      - ./auth_service:/srv/app
+    ports:
+      - "8000:8000"
+    command: "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+    depends_on:
+      - database
+    healthcheck:
+      test: [ "CMD-SHELL", "curl localhost:8000/docs" ]
+      start_period: 10s
+      interval: 5s
+      timeout: 2s
+      retries: 15
+    restart: unless-stopped
+    networks:
+      - fdb_network
+
+  storage_service:
+    image: fdb-storage_service
+    container_name: fbd_storage_service
+    build: ./storage_service
+    volumes:
+      - ./storage_service:/srv/app
+    ports:
+      - "8001:8001"
+    command: "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8001"
+    depends_on:
+      - database
+      - auth_service
+    healthcheck:
+      test: [ "CMD-SHELL", "curl localhost:8001/docs" ]
+      start_period: 10s
+      interval: 5s
+      timeout: 2s
+      retries: 15
+    restart: unless-stopped
+    networks:
+      - fdb_network
+
+  data_service:
+    image: fdb-data_service
+    container_name: fbd_data_service
+    build: ./data_service
+    volumes:
+      - ./data_service:/srv/app
+    ports:
+      - "8002:8002"
+    command: "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8002"
+    depends_on:
+      - database
+      - redis
+      - auth_service
+      - storage_service
+    healthcheck:
+      test: [ "CMD-SHELL", "curl localhost:8002/docs" ]
+      start_period: 10s
+      interval: 5s
+      timeout: 2s
+      retries: 15
+    restart: unless-stopped
+    networks:
+      - fdb_network
+
+  visualization_service:
+    image: fdb-visualization_service
+    container_name: fbd_visualization_service
+    build: ./visualization_service
+    volumes:
+      - ./visualization_service:/srv/app
+    ports:
+      - "8003:8003"
+    command: "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8003"
+    depends_on:
+      - database
+      - redis
+      - auth_service
+      - storage_service
+    healthcheck:
+      test: [ "CMD-SHELL", "curl localhost:8003/docs" ]
+      start_period: 10s
+      interval: 5s
+      timeout: 2s
+      retries: 15
+    restart: unless-stopped
+    networks:
+      - fdb_network
+
+  missing_data_service:
+    image: fdb-missing_data_service
+    container_name: fbd_missing_data_service
+    build: ./missing_data_service
+    volumes:
+      - ./missing_data_service:/srv/app
+    ports:
+      - "8004:8004"
+    depends_on:
+      - database
+      - redis
+      - auth_service
+    restart: unless-stopped
+    networks:
+      - fdb_network
+
+networks:
+    fdb_network:
+        name: fdb_network
+        driver: bridge
